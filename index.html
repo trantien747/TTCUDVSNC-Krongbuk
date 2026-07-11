@@ -418,11 +418,24 @@
   async function goiGet(action, params) {
     let url = API_URL + '?action=' + action;
     if (params) for (const k in params) if (params[k] !== undefined && params[k] !== null) url += '&' + k + '=' + encodeURIComponent(params[k]);
-    const res = await fetch(url); return res.json();
+    try {
+      const res = await fetch(url);
+      const kq = await res.json();
+      if (!kq || typeof kq !== 'object') return { thanhCong: false, thongBao: 'Máy chủ trả về dữ liệu không hợp lệ (có thể do chưa Deploy phiên bản mới nhất trên Apps Script).' };
+      return kq;
+    } catch (e) {
+      return { thanhCong: false, thongBao: 'Lỗi kết nối tới máy chủ: ' + e.message + ' (có thể do chưa Deploy phiên bản mới nhất trên Apps Script)' };
+    }
   }
   async function goiPost(body) {
-    const res = await fetch(API_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(body) });
-    return res.json();
+    try {
+      const res = await fetch(API_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(body) });
+      const kq = await res.json();
+      if (!kq || typeof kq !== 'object') return { thanhCong: false, thongBao: 'Máy chủ trả về dữ liệu không hợp lệ (có thể do chưa Deploy phiên bản mới nhất trên Apps Script).' };
+      return kq;
+    } catch (e) {
+      return { thanhCong: false, thongBao: 'Lỗi kết nối tới máy chủ: ' + e.message + ' (có thể do chưa Deploy phiên bản mới nhất trên Apps Script)' };
+    }
   }
 
   function ch(s) { return s === null || s === undefined ? '' : String(s).normalize('NFC'); }
@@ -1059,11 +1072,15 @@
     if (gio) hanXuLy += ' ' + gio;
 
     ketQuaEl.style.display = 'block'; ketQuaEl.textContent = '⏳ Đang giao việc...';
-    const kq = await goiPost({ action: 'giaoViecMoi', token: token, tieuDe: tieuDe, hanXuLy: hanXuLy, coTheoDoi: coTheoDoi, coThamMuu: coThamMuu, danhSachNguoi: danhSachNguoi, nhomChuDe: nhomChuDe });
-    if (!kq.thanhCong) { ketQuaEl.textContent = kq.thongBao || 'Có lỗi xảy ra.'; return; }
-    await taiTongQuan();
-    if (token) await taiNhiemVuCuaToi();
-    xemThanhVienChiTiet(hoTenGoiY);
+    try {
+      const kq = await goiPost({ action: 'giaoViecMoi', token: token, tieuDe: tieuDe, hanXuLy: hanXuLy, coTheoDoi: coTheoDoi, coThamMuu: coThamMuu, danhSachNguoi: danhSachNguoi, nhomChuDe: nhomChuDe });
+      if (!kq || !kq.thanhCong) { ketQuaEl.textContent = (kq && kq.thongBao) || 'Có lỗi xảy ra, vui lòng thử lại.'; return; }
+      await taiTongQuan();
+      if (token) await taiNhiemVuCuaToi();
+      xemThanhVienChiTiet(hoTenGoiY);
+    } catch (e) {
+      ketQuaEl.textContent = '❌ Lỗi: ' + e.message;
+    }
   }
 
   function chonVanBan(idx) {
