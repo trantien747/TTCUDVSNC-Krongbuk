@@ -86,6 +86,13 @@
   .chip { display: inline-block; font-size: 9.5px; padding: 2px 8px; border-radius: 8px; margin-right: 5px; font-weight: 700; letter-spacing: 0.2px; }
   .chip.theodoi { background: var(--accent-soft); color: var(--accent-dark); }
   .chip.thammuu { background: rgba(181,117,15,0.15); color: #8a5a09; }
+  .chip-viec { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 700; padding: 4px 6px 4px 10px; border-radius: 14px; }
+  .chip-viec.theodoi { background: var(--accent-soft); color: var(--accent-dark); }
+  .chip-viec.thammuu { background: rgba(198,124,17,0.15); color: #8a5a09; }
+  .chip-tick { width: 17px; height: 17px; border-radius: 50%; border: 1.5px solid currentColor; display: inline-flex; align-items: center; justify-content: center; font-size: 10px; cursor: pointer; background: rgba(255,255,255,0.7); flex-shrink: 0; transition: all 0.15s; }
+  .chip-tick:hover { background: var(--accent); color: #fff; transform: scale(1.1); }
+  .chip-tick.xong { background: var(--green); color: #fff; border-color: var(--green); cursor: default; }
+  .chip-tick.xong:hover { transform: none; }
   .trangthai-mini { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 600; color: var(--text-dim); }
   .cham { width: 7px; height: 7px; border-radius: 50%; display: inline-block; }
   .cham.xong { background: var(--green); }
@@ -937,18 +944,37 @@
     }
     if (tuKhoa) ds = ds.filter(function(x) { return x.v.soKyHieu.toLowerCase().includes(tuKhoa) || x.v.trichYeu.toLowerCase().includes(tuKhoa); });
 
+    // Gộp về 1 dòng / văn bản — văn bản vừa cần theo dõi vừa cần tham mưu thì
+    // gộp chung 1 dòng, mỗi loại việc có chip riêng + nút tick hoàn thành nhanh,
+    // thay vì tách thành 2 dòng trùng lặp gây rối như trước.
+    const nhomTheoVanBan = {}; const thuTu = [];
+    ds.forEach(function(x) {
+      if (!nhomTheoVanBan[x.v.dong]) { nhomTheoVanBan[x.v.dong] = { v: x.v, loais: [] }; thuTu.push(x.v.dong); }
+      nhomTheoVanBan[x.v.dong].loais.push(x.loai);
+    });
+
     document.getElementById('tieuDeDanhSach').textContent = 'Việc của tôi';
-    document.getElementById('demDanhSach').textContent = ds.length + ' việc';
+    document.getElementById('demDanhSach').textContent = thuTu.length + ' văn bản';
     const body = document.getElementById('thanDanhSach');
     const thanhLoc = veThanhLocCongViec();
-    if (!ds.length) { body.innerHTML = thanhLoc + '<div class="detail-rong" style="padding:40px 20px;"><div class="icon">📭</div>Không có việc nào khớp bộ lọc</div>'; return; }
-    body.innerHTML = thanhLoc + ds.map(function(x) {
-      const xong = (x.loai === 'TheoDoi' ? x.v.trangThaiTheoDoi : x.v.trangThaiThamMuu) === 'Hoàn thành';
-      const nhan = x.loai === 'TheoDoi' ? '<span class="chip theodoi">👁 Theo dõi</span>' : '<span class="chip thammuu">✍️ Tham mưu</span>';
-      const sk = ch(x.v.soKyHieu).replace(/'/g, "\\'");
+    if (!thuTu.length) { body.innerHTML = thanhLoc + '<div class="detail-rong" style="padding:40px 20px;"><div class="icon">📭</div>Không có việc nào khớp bộ lọc</div>'; return; }
+
+    body.innerHTML = thanhLoc + thuTu.map(function(dong) {
+      const nhom = nhomTheoVanBan[dong];
+      const v = nhom.v;
+      const sk = ch(v.soKyHieu).replace(/'/g, "\\'");
+      const chips = nhom.loais.map(function(loai) {
+        const xong = (loai === 'TheoDoi' ? v.trangThaiTheoDoi : v.trangThaiThamMuu) === 'Hoàn thành';
+        const nhanLoai = loai === 'TheoDoi' ? '👁 Theo dõi' : '✍️ Tham mưu';
+        const lopLoai = loai === 'TheoDoi' ? 'theodoi' : 'thammuu';
+        const tick = xong
+          ? '<span class="chip-tick xong" title="Đã hoàn thành">✓</span>'
+          : '<span class="chip-tick" title="Đánh dấu hoàn thành" onclick="event.stopPropagation();guiHoanThanh(' + v.dong + ",'" + loai + "')\">☐</span>";
+        return '<span class="chip-viec ' + lopLoai + '">' + nhanLoai + tick + '</span>';
+      }).join('');
       return '<div class="list-row" onclick="moVanBanTheoSoKyHieu(\'' + sk + '\')">' +
-        '<div class="sky">' + ch(x.v.soKyHieu) + '</div><div class="ty">' + ch(x.v.trichYeu) + '</div>' +
-        '<div class="meta"><span>' + nhan + '</span><span class="trangthai-mini"><span class="cham ' + (xong ? 'xong' : 'dang') + '"></span>' + (xong ? 'Hoàn thành' : 'Đang xử lý') + '</span></div></div>';
+        '<div class="sky">' + ch(v.soKyHieu) + '</div><div class="ty">' + ch(v.trichYeu) + '</div>' +
+        '<div class="meta" style="flex-wrap:wrap;gap:6px;">' + chips + '</div></div>';
     }).join('');
   }
 
@@ -987,19 +1013,34 @@
 
   function xemThanhVienChiTiet(hoTen) {
     dangXemThanhVien = true; thanhVienDangXem = hoTen;
-    const ds = [];
+    const nhomTheoVanBan = {}; const thuTu = [];
     dsTongQuan.forEach(function(v) {
-      if (v.nguoiTheoDoi.includes(hoTen)) ds.push({ v: v, loai: 'TheoDoi' });
-      if (v.nguoiThamMuu.includes(hoTen)) ds.push({ v: v, loai: 'ThamMuu' });
+      const loais = [];
+      if (v.nguoiTheoDoi.includes(hoTen)) loais.push('TheoDoi');
+      if (v.nguoiThamMuu.includes(hoTen)) loais.push('ThamMuu');
+      if (loais.length) { nhomTheoVanBan[v.dong] = { v: v, loais: loais }; thuTu.push(v.dong); }
     });
     const kl = tinhKhoiLuongThanhVien(hoTen);
-    const the = ds.length ? ds.map(function(x) {
-      const xong = (x.loai === 'TheoDoi' ? x.v.trangThaiTheoDoi : x.v.trangThaiThamMuu) === 'Hoàn thành';
-      const nhan = x.loai === 'TheoDoi' ? '<span class="chip theodoi">👁 Theo dõi</span>' : '<span class="chip thammuu">✍️ Tham mưu</span>';
-      const sk = ch(x.v.soKyHieu).replace(/'/g, "\\'");
+    const coQuyenTick = vaiTroHienTai === 'Admin' || hoTen === hoTenHienTai;
+    const the = thuTu.length ? thuTu.map(function(dong) {
+      const nhom = nhomTheoVanBan[dong];
+      const v = nhom.v;
+      const sk = ch(v.soKyHieu).replace(/'/g, "\\'");
+      const chips = nhom.loais.map(function(loai) {
+        const xong = (loai === 'TheoDoi' ? v.trangThaiTheoDoi : v.trangThaiThamMuu) === 'Hoàn thành';
+        const nhanLoai = loai === 'TheoDoi' ? '👁 Theo dõi' : '✍️ Tham mưu';
+        const lopLoai = loai === 'TheoDoi' ? 'theodoi' : 'thammuu';
+        let tick = '';
+        if (coQuyenTick) {
+          tick = xong
+            ? '<span class="chip-tick xong" title="Đã hoàn thành">✓</span>'
+            : '<span class="chip-tick" title="Đánh dấu hoàn thành" onclick="event.stopPropagation();guiHoanThanh(' + v.dong + ",'" + loai + "')\">☐</span>";
+        }
+        return '<span class="chip-viec ' + lopLoai + '">' + nhanLoai + tick + '</span>';
+      }).join('');
       return '<div class="hoanthanh-the" onclick="moVanBanTheoSoKyHieu(\'' + sk + '\')">' +
-        '<div class="sky">' + ch(x.v.soKyHieu) + '</div><div class="ty">' + ch(x.v.trichYeu) + '</div>' +
-        nhan + ' <span class="the-trangthai ' + (xong ? 'xong' : 'dang') + '" style="margin-left:4px;">' + (xong ? 'Hoàn thành' : 'Đang xử lý') + '</span></div>';
+        '<div class="sky">' + ch(v.soKyHieu) + '</div><div class="ty">' + ch(v.trichYeu) + '</div>' +
+        '<div style="display:flex;flex-wrap:wrap;gap:6px;">' + chips + '</div></div>';
     }).join('') : '<div class="hoanthanh-rong">Chưa có việc nào được giao cho người này.</div>';
 
     document.getElementById('noiDungChiTiet').innerHTML =
@@ -1234,6 +1275,9 @@
   async function lamMoiSauThaoTac() {
     await taiTongQuan();
     if (token) await taiNhiemVuCuaToi();
+    // "Việc của tôi" và "Theo thành viên" đã tự làm mới đúng nội dung đang xem
+    // (ở taiNhiemVuCuaToi/taiTongQuan bên trên) — không xoá trắng khung chi tiết nữa.
+    if (navHienTai === 'congviec' || navHienTai === 'thanhvien') return;
     if (navHienTai === 'nhom' && nhomDangChon) dsHienThiHienTai = dsTongQuan.filter(function(v) { return ((v.nhomChuDe && v.nhomChuDe.trim()) ? v.nhomChuDe.trim() : 'Chưa phân loại') === nhomDangChon; });
     else dsHienThiHienTai = dsTongQuan;
     renderDanhSach();
