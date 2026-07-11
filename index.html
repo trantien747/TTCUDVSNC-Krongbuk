@@ -992,8 +992,78 @@
     document.getElementById('noiDungChiTiet').innerHTML =
       '<div class="btn-quaylai-dash" onclick="renderThanhVien()">← Quay lại danh sách thành viên</div>' +
       '<div class="detail-title" style="color:var(--accent-dark);margin-bottom:6px;">👤 ' + ch(hoTen) + '</div>' +
-      '<div style="font-size:13px;color:var(--text-dim);margin-bottom:16px;">' + kl.dangXuLy + ' việc đang xử lý · ' + kl.hoanThanh + ' việc đã hoàn thành</div>' +
+      '<div style="font-size:13px;color:var(--text-dim);margin-bottom:14px;">' + kl.dangXuLy + ' việc đang xử lý · ' + kl.hoanThanh + ' việc đã hoàn thành</div>' +
+      '<button class="btn-sm xanh" style="margin-bottom:18px;" onclick="moFormGiaoViec(\'' + ch(hoTen).replace(/'/g, "\\'") + '\')">➕ Giao việc</button>' +
       the;
+  }
+
+  // ===== Giao việc trực tiếp (đột xuất/giao miệng) cho 1 thành viên =====
+  function layDanhSachNhomTuDsTongQuan() {
+    const s = new Set();
+    dsTongQuan.forEach(function(v) { if (v.nhomChuDe && v.nhomChuDe.trim()) s.add(v.nhomChuDe.trim()); });
+    return Array.from(s).sort();
+  }
+
+  function moFormGiaoViec(hoTenGoiY) {
+    const dsNhom = layDanhSachNhomTuDsTongQuan();
+    const oNhom = dsNhom.map(function(n) { return '<option value="' + ch(n) + '">' + ch(n) + '</option>'; }).join('');
+    const oNguoi = (danhSachNhanVienCache || []).map(function(nv) {
+      const checked = nv.hoTen === hoTenGoiY ? 'checked' : '';
+      return '<label class="cb-nhanvien"><input type="checkbox" value="' + ch(nv.hoTen) + '" ' + checked + '> ' + ch(nv.hoTen) + '</label>';
+    }).join('');
+
+    document.getElementById('noiDungChiTiet').innerHTML =
+      '<div class="btn-quaylai-dash" onclick="xemThanhVienChiTiet(\'' + ch(hoTenGoiY).replace(/'/g, "\\'") + '\')">← Hủy, quay lại</div>' +
+      '<div class="detail-title" style="color:var(--accent-dark);margin-bottom:16px;">➕ Giao việc trực tiếp</div>' +
+      '<div class="khoi-upload">' +
+      '<div class="goi-y-box">💡 Dùng cho việc đột xuất/giao miệng, không có văn bản giấy tờ nào — việc này sẽ hiện trên Lịch, Việc của tôi y như văn bản thật.</div>' +
+      '<label class="nhan-form">📝 Nội dung công việc</label>' +
+      '<textarea id="gvTieuDe" placeholder="VD: Kiểm tra các tuyến đường thu gom rác thải"></textarea>' +
+      '<label class="nhan-form">📅 Hạn xử lý</label>' +
+      '<div style="display:flex;gap:10px;margin-bottom:6px;">' +
+        '<input type="date" id="gvNgay" style="flex:1;padding:11px 14px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;">' +
+        '<input type="time" id="gvGio" style="flex:1;padding:11px 14px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;">' +
+      '</div>' +
+      '<div style="font-size:11.5px;color:var(--text-dim);margin-bottom:15px;">Để trống ô giờ nếu chỉ cần hạn theo ngày, không cần giờ cụ thể.</div>' +
+      '<label class="nhan-form">Loại việc</label>' +
+      '<div style="display:flex;gap:10px;margin-bottom:15px;">' +
+        '<label class="cb-nhanvien"><input type="checkbox" id="gvTheoDoi" checked> 👁 Theo dõi</label>' +
+        '<label class="cb-nhanvien"><input type="checkbox" id="gvThamMuu"> ✍️ Tham mưu</label>' +
+      '</div>' +
+      '<label class="nhan-form">Người phụ trách</label>' +
+      '<div class="cb-luoi" id="gvNguoi" style="margin-bottom:15px;">' + oNguoi + '</div>' +
+      '<label class="nhan-form">Nhóm việc (không bắt buộc)</label>' +
+      '<select class="loc-select" id="gvNhom" style="margin-bottom:18px;"><option value="">— Việc độc lập, không thuộc nhóm nào —</option>' + oNhom + '</select>' +
+      '<button class="btn-sm xanh" style="width:100%;padding:13px;font-size:13.5px;" onclick="guiGiaoViec(\'' + ch(hoTenGoiY).replace(/'/g, "\\'") + '\')">✅ Giao việc</button>' +
+      '<div class="ket-qua-upload" id="ketQuaGiaoViec"></div>' +
+      '</div>';
+  }
+
+  async function guiGiaoViec(hoTenGoiY) {
+    const tieuDe = document.getElementById('gvTieuDe').value.trim();
+    const ngay = document.getElementById('gvNgay').value;
+    const gio = document.getElementById('gvGio').value;
+    const coTheoDoi = document.getElementById('gvTheoDoi').checked;
+    const coThamMuu = document.getElementById('gvThamMuu').checked;
+    const danhSachNguoi = Array.from(document.querySelectorAll('#gvNguoi input:checked')).map(function(cb) { return cb.value; });
+    const nhomChuDe = document.getElementById('gvNhom').value;
+    const ketQuaEl = document.getElementById('ketQuaGiaoViec');
+
+    if (!tieuDe) { alert('Vui lòng nhập nội dung công việc.'); return; }
+    if (!ngay) { alert('Vui lòng chọn hạn xử lý.'); return; }
+    if (!coTheoDoi && !coThamMuu) { alert('Vui lòng chọn ít nhất Theo dõi hoặc Tham mưu.'); return; }
+    if (!danhSachNguoi.length) { alert('Vui lòng chọn ít nhất 1 người phụ trách.'); return; }
+
+    const parts = ngay.split('-'); // yyyy-mm-dd (định dạng input date)
+    let hanXuLy = parts[2] + '-' + parts[1] + '-' + parts[0];
+    if (gio) hanXuLy += ' ' + gio;
+
+    ketQuaEl.style.display = 'block'; ketQuaEl.textContent = '⏳ Đang giao việc...';
+    const kq = await goiPost({ action: 'giaoViecMoi', token: token, tieuDe: tieuDe, hanXuLy: hanXuLy, coTheoDoi: coTheoDoi, coThamMuu: coThamMuu, danhSachNguoi: danhSachNguoi, nhomChuDe: nhomChuDe });
+    if (!kq.thanhCong) { ketQuaEl.textContent = kq.thongBao || 'Có lỗi xảy ra.'; return; }
+    await taiTongQuan();
+    if (token) await taiNhiemVuCuaToi();
+    xemThanhVienChiTiet(hoTenGoiY);
   }
 
   function chonVanBan(idx) {
