@@ -486,6 +486,7 @@
         localStorage.setItem('tt_token', token);
         localStorage.setItem('tt_hoten', hoTenHienTai);
         localStorage.setItem('tt_vaitro', vaiTroHienTai);
+        locCongViec.nhanVien = hoTenHienTai;
         dongModalDangNhap(); capNhatGiaoDienDangNhap();
         await taiNhiemVuCuaToi();
         chuyenNav('congviec');
@@ -502,7 +503,7 @@
 
   function khoiPhucPhien() {
     const t = localStorage.getItem('tt_token');
-    if (t) { token = t; hoTenHienTai = localStorage.getItem('tt_hoten'); vaiTroHienTai = localStorage.getItem('tt_vaitro'); }
+    if (t) { token = t; hoTenHienTai = localStorage.getItem('tt_hoten'); vaiTroHienTai = localStorage.getItem('tt_vaitro'); locCongViec.nhanVien = hoTenHienTai; }
     capNhatGiaoDienDangNhap();
     if (token) taiNhiemVuCuaToi();
   }
@@ -563,8 +564,11 @@
     const kq = await goiPost({ action: 'nhiemVuCuaToi', token: token });
     if (!kq.thanhCong) { alert(kq.thongBao); dangXuat(); return; }
     nhiemVuCuaToi = kq;
-    const theoDoiChuaXong = kq.canTheoDoi.filter(function(v) { return v.trangThaiTheoDoi !== 'Hoàn thành'; });
-    const thamMuuChuaXong = kq.canThamMuu.filter(function(v) { return v.trangThaiThamMuu !== 'Hoàn thành'; });
+    // Huy hiệu số ở sidebar chỉ nên đếm ĐÚNG việc của CHÍNH MÌNH — dù Admin có
+    // xem được việc của tất cả mọi người (để lọc theo nhân viên), con số cạnh
+    // "Việc của tôi" không nên gộp cả cơ quan vào, dễ gây hiểu nhầm (99+).
+    const theoDoiChuaXong = kq.canTheoDoi.filter(function(v) { return v.nguoiTheoDoi.includes(hoTenHienTai) && v.trangThaiTheoDoi !== 'Hoàn thành'; });
+    const thamMuuChuaXong = kq.canThamMuu.filter(function(v) { return v.nguoiThamMuu.includes(hoTenHienTai) && v.trangThaiThamMuu !== 'Hoàn thành'; });
     const tongChuaXong = theoDoiChuaXong.length + thamMuuChuaXong.length;
     const bCongViec = document.getElementById('badgeCongViec');
     bCongViec.textContent = tongChuaXong > 99 ? '99+' : tongChuaXong;
@@ -716,10 +720,21 @@
 
   function parseHanXuLy(s) {
     if (!s) return null;
-    const m = String(s).match(/(\d{1,2})[-\/](\d{1,2})[-\/](\d{4})/);
-    if (!m) return null;
-    const d = new Date(parseInt(m[3], 10), parseInt(m[2], 10) - 1, parseInt(m[1], 10));
-    return isNaN(d.getTime()) ? null : d;
+    const str = String(s).trim();
+    // Ưu tiên thử YYYY-MM-DD trước (phòng dữ liệu cũ/khác định dạng chuẩn),
+    // sau đó mới thử DD-MM-YYYY (định dạng chính AI đang dùng) — nhận diện
+    // dựa vào nhóm 4 chữ số luôn là năm, không phụ thuộc thứ tự xuất hiện.
+    let m = str.match(/(\d{4})[-\/](\d{1,2})[-\/](\d{1,2})/);
+    if (m) {
+      const d1 = new Date(parseInt(m[1], 10), parseInt(m[2], 10) - 1, parseInt(m[3], 10));
+      if (!isNaN(d1.getTime())) return d1;
+    }
+    m = str.match(/(\d{1,2})[-\/](\d{1,2})[-\/](\d{4})/);
+    if (m) {
+      const d2 = new Date(parseInt(m[3], 10), parseInt(m[2], 10) - 1, parseInt(m[1], 10));
+      if (!isNaN(d2.getTime())) return d2;
+    }
+    return null;
   }
 
   function tinhThongKeTongQuan() {
@@ -1261,15 +1276,58 @@
     else alert(kq.thongBao);
   }
 
+  // Cập nhật trạng thái ngay trên dữ liệu đang có sẵn ở trình duyệt (không đợi
+  // máy chủ trả lời), để giao diện phản hồi tức thì thay vì phải chờ 2-3 lượt
+  // gọi Apps Script nối tiếp nhau (mỗi lượt có thể mất 1-3 giây).
+  function capNhatTrangThaiCucBo(soDong, loai, trangThaiMoi) {
+    const apDung = function(list) {
+      const v = list.find(function(x) { return x.dong === soDong; });
+      if (!v) return;
+      if (loai === 'TheoDoi') v.trangThaiTheoDoi = trangThaiMoi; else v.trangThaiThamMuu = trangThaiMoi;
+      const coTheoDoi = v.nguoiTheoDoi.length > 0, coThamMuu = v.nguoiThamMuu.length > 0;
+      const xongTheoDoi = !coTheoDoi || v.trangThaiTheoDoi === 'Hoàn thành';
+      const xongThamMuu = !coThamMuu || v.trangThaiThamMuu === 'Hoàn thành';
+      v.trangThaiTong = (xongTheoDoi && xongThamMuu) ? 'Hoàn thành' : 'Đang xử lý';
+    };
+    apDung(dsTongQuan);
+    if (nhiemVuCuaToi.canTheoDoi) apDung(nhiemVuCuaToi.canTheoDoi);
+    if (nhiemVuCuaToi.canThamMuu) apDung(nhiemVuCuaToi.canThamMuu);
+  }
+
+  // Vẽ lại đúng màn hình đang xem (không đoán mò về Tổng quan như trước).
+  function renderLaiManHinhHienTai() {
+    if (dangXemCongViec) { renderCongViec(); return; }
+    if (dangXemThanhVien) { if (thanhVienDangXem) xemThanhVienChiTiet(thanhVienDangXem); else renderThanhVien(); return; }
+    if (dangXemDashboard) { renderDashboardTongQuan(); return; }
+    if (dangXemLich) { renderLichThang(); return; }
+    if (vanBanDangXem) { renderChiTiet(vanBanDangXem); return; }
+  }
+
+  // Đồng bộ lại với máy chủ ở chế độ nền — không hiện "đang tải", không chặn
+  // thao tác tiếp theo của người dùng. Chạy song song thay vì nối tiếp.
+  async function dongBoNenSauThaoTac() {
+    try { await Promise.all([taiTongQuan(), token ? taiNhiemVuCuaToi() : Promise.resolve()]); } catch (e) { /* im lặng, UI đã cập nhật lạc quan rồi */ }
+  }
+
   async function guiHoanThanh(soDong, loai) {
     if (!confirm('Xác nhận nhiệm vụ này đã hoàn thành?')) return;
-    const kq = await goiPost({ action: 'hoanThanh', token: token, soDong: soDong, loaiViec: loai });
-    if (kq.thanhCong) { await lamMoiSauThaoTac(); } else alert(kq.thongBao);
+    capNhatTrangThaiCucBo(soDong, loai, 'Hoàn thành');
+    renderLaiManHinhHienTai();
+    try {
+      const kq = await goiPost({ action: 'hoanThanh', token: token, soDong: soDong, loaiViec: loai });
+      if (!kq || !kq.thanhCong) { alert((kq && kq.thongBao) || 'Có lỗi xảy ra, đang tải lại dữ liệu.'); await lamMoiSauThaoTac(); return; }
+      dongBoNenSauThaoTac();
+    } catch (e) { alert('Lỗi: ' + e.message); await lamMoiSauThaoTac(); }
   }
   async function guiMoLai(soDong, loai) {
     if (!confirm('Mở lại nhiệm vụ này (chuyển về Đang xử lý)?')) return;
-    const kq = await goiPost({ action: 'huyHoanThanh', token: token, soDong: soDong, loaiViec: loai });
-    if (kq.thanhCong) { await lamMoiSauThaoTac(); } else alert(kq.thongBao);
+    capNhatTrangThaiCucBo(soDong, loai, 'Đang xử lý');
+    renderLaiManHinhHienTai();
+    try {
+      const kq = await goiPost({ action: 'huyHoanThanh', token: token, soDong: soDong, loaiViec: loai });
+      if (!kq || !kq.thanhCong) { alert((kq && kq.thongBao) || 'Có lỗi xảy ra, đang tải lại dữ liệu.'); await lamMoiSauThaoTac(); return; }
+      dongBoNenSauThaoTac();
+    } catch (e) { alert('Lỗi: ' + e.message); await lamMoiSauThaoTac(); }
   }
 
   async function lamMoiSauThaoTac() {
